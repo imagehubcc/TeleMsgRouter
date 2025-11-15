@@ -10,6 +10,8 @@
 
 > 一个功能完善、支持 AI 驱动的 Telegram 双向聊天机器人，专为提升用户与管理员之间的沟通效率和安全性而设计。
 
+**如有疑问请私聊: [Sanite&Ava](https://t.me/Sanite_Ava_Private_ChatBot)**
+
 ---
 
 ## 📜 目录
