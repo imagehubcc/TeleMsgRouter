@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  TG-Antiharassment-Bot:
+    container_name: TG-Antiharassment-Bot  # 容器名，可定义
+    image: weijiaqaq/tg-antiharassment-bot:latest
+    restart: unless-stopped
+    environment:
+     - .env
+    volumes:
+     - ./data:/app/data
