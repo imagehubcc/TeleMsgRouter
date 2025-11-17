@@ -53,6 +53,13 @@ class GeminiService:
             response = await self.filter_model.generate_content_async(content)
             
             print("--- Received response from Gemini API ---")
+
+            if not response.candidates:
+                print("Gemini analysis was blocked.")
+                if hasattr(response, 'prompt_feedback'):
+                    print(f"Prompt feedback: {response.prompt_feedback}")
+                return {"is_spam": True, "reason": "内容审查失败，可能包含不当内容。"}
+
             print(f"Raw response: {response.text}")
 
             if not response.text:
@@ -65,8 +72,12 @@ class GeminiService:
             return result
         except Exception as e:
             print(f"Gemini analysis failed: {e}")
-            if 'response' in locals() and hasattr(response, 'text'):
-                print(f"Original Gemini response: {response.text}")
+            if 'response' in locals():
+                try:
+                    if response.candidates:
+                        print(f"Original Gemini response: {response.text}")
+                except ValueError:
+                    print("Could not retrieve response.text.")
             return {"is_spam": False, "reason": "Analysis failed"}
     
     async def generate_unblock_question(self) -> dict:
