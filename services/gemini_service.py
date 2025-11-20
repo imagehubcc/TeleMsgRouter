@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from google.genai import Client
 from telegram import Message
 from config import config
 import json
@@ -158,15 +158,16 @@ LOCAL_VERIFICATION_QUESTIONS = [
 class GeminiService:
     def __init__(self):
         if config.GEMINI_API_KEY:
-            genai.configure(api_key=config.GEMINI_API_KEY)
-            self.filter_model = genai.GenerativeModel('gemini-2.5-flash')
-            self.verification_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+            self.client = Client(api_key=config.GEMINI_API_KEY)
+            self.filter_model_name = 'gemini-2.5-flash'
+            self.verification_model_name = 'gemini-2.5-flash-lite'
         else:
-            self.filter_model = None
-            self.verification_model = None
+            self.client = None
+            self.filter_model_name = None
+            self.verification_model_name = None
     
     async def analyze_message(self, message: Message, image_bytes: bytes = None) -> dict:
-        if not self.filter_model or not config.ENABLE_AI_FILTER:
+        if not self.client or not self.filter_model_name or not config.ENABLE_AI_FILTER:
             return {"is_spam": False, "reason": "AI filter disabled"}
 
         content = []
@@ -198,22 +199,30 @@ class GeminiService:
         print(f"Content: {content}")
 
         try:
-            response = await self.filter_model.generate_content_async(content)
+            response = await self.client.aio.models.generate_content(
+                model=self.filter_model_name,
+                contents=content
+            )
             
             print("--- Received response from Gemini API ---")
 
-            if not response.candidates:
+            if not hasattr(response, 'candidates') or not response.candidates:
                 print("Gemini analysis was blocked.")
                 if hasattr(response, 'prompt_feedback'):
                     print(f"Prompt feedback: {response.prompt_feedback}")
                 return {"is_spam": True, "reason": "内容审查失败，可能包含不当内容。"}
 
-            print(f"Raw response: {response.text}")
+            if response.candidates and response.candidates[0].content.parts:
+                response_text = response.candidates[0].content.parts[0].text
+            else:
+                response_text = None
+            
+            print(f"Raw response: {response_text}")
 
-            if not response.text:
+            if not response_text:
                 raise ValueError("Gemini API returned an empty response.")
             
-            clean_text = re.sub(r'```json\s*|\s*```', '', response.text).strip()
+            clean_text = re.sub(r'```json\s*|\s*```', '', response_text).strip()
             result = json.loads(clean_text)
             
             print(f"Parsed result: {result}")
@@ -222,10 +231,11 @@ class GeminiService:
             print(f"Gemini analysis failed: {e}")
             if 'response' in locals():
                 try:
-                    if response.candidates:
-                        print(f"Original Gemini response: {response.text}")
-                except ValueError:
-                    print("Could not retrieve response.text.")
+                    if response.candidates and response.candidates[0].content.parts:
+                        response_text = response.candidates[0].content.parts[0].text
+                        print(f"Original Gemini response: {response_text}")
+                except (AttributeError, IndexError):
+                    print("Could not retrieve response text.")
             return {"is_spam": False, "reason": "Analysis failed"}
     
     def _get_local_question(self) -> dict:
@@ -241,7 +251,7 @@ class GeminiService:
         }
 
     async def generate_unblock_question(self) -> dict:
-        if not self.verification_model:
+        if not self.client or not self.verification_model_name:
             return self._get_local_question()
 
         prompt = """
@@ -271,12 +281,20 @@ class GeminiService:
         }
         """
         try:
-            response = await self.verification_model.generate_content_async(prompt)
+            response = await self.client.aio.models.generate_content(
+                model=self.verification_model_name,
+                contents=prompt
+            )
             
-            if not response.text:
+            if response.candidates and response.candidates[0].content.parts:
+                response_text = response.candidates[0].content.parts[0].text
+            else:
+                response_text = None
+            
+            if not response_text:
                 raise ValueError("Gemini API返回空响应")
             
-            clean_text = re.sub(r'```json\s*|\s*```', '', response.text).strip()
+            clean_text = re.sub(r'```json\s*|\s*```', '', response_text).strip()
             data = json.loads(clean_text)
             
             correct_answer = data['correct_answer']
@@ -291,14 +309,19 @@ class GeminiService:
         except Exception as e:
             print(f"生成解封验证问题失败: {e}")
             
-            if 'response' in locals() and hasattr(response, 'text'):
-                print(f"Gemini原始响应: {response.text}")
+            if 'response' in locals():
+                try:
+                    if response.candidates and response.candidates[0].content.parts:
+                        response_text = response.candidates[0].content.parts[0].text
+                        if response_text:
+                            print(f"Gemini原始响应: {response_text}")
+                except (AttributeError, IndexError):
+                    pass
             
             return self._get_local_question()
 
     async def generate_verification_challenge(self) -> dict:
-        """生成人机验证问题"""
-        if not self.verification_model:
+        if not self.client or not self.verification_model_name:
             return self._get_local_question()
 
         prompt = """
@@ -328,13 +351,21 @@ class GeminiService:
         }
         """
         try:
-            response = await self.verification_model.generate_content_async(prompt)
+            response = await self.client.aio.models.generate_content(
+                model=self.verification_model_name,
+                contents=prompt
+            )
             
-            if not response.text:
+            if response.candidates and response.candidates[0].content.parts:
+                response_text = response.candidates[0].content.parts[0].text
+            else:
+                response_text = None
+            
+            if not response_text:
                 raise ValueError("Gemini API返回空响应")
 
             
-            clean_text = re.sub(r'```json\s*|\s*```', '', response.text).strip()
+            clean_text = re.sub(r'```json\s*|\s*```', '', response_text).strip()
             data = json.loads(clean_text)
             
             
@@ -350,8 +381,14 @@ class GeminiService:
         except Exception as e:
             print(f"生成验证问题失败: {e}")
             
-            if 'response' in locals() and hasattr(response, 'text'):
-                print(f"Gemini原始响应: {response.text}")
+            if 'response' in locals():
+                try:
+                    if response.candidates and response.candidates[0].content.parts:
+                        response_text = response.candidates[0].content.parts[0].text
+                        if response_text:
+                            print(f"Gemini原始响应: {response_text}")
+                except (AttributeError, IndexError):
+                    pass
             
             return self._get_local_question()
 
