@@ -332,3 +332,81 @@ async def get_blacklist_keyboard_detailed(page: int = 1, per_page: int = 5):
         keyboard = [[InlineKeyboardButton("返回统计菜单", callback_data="stats_back_to_menu")]]
     
     return message, InlineKeyboardMarkup(keyboard)
+
+async def get_exemptions_keyboard(page: int = 1, per_page: int = 5):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from datetime import datetime, timezone
+    
+    total_count = await db.get_exemptions_count()
+    
+    if total_count == 0:
+        return "豁免名单中没有用户。", None
+
+    total_pages = (total_count + per_page - 1) // per_page
+
+    if page < 1:
+        page = 1
+    elif page > total_pages:
+        page = total_pages
+
+    offset = (page - 1) * per_page
+
+    exemptions = await db.get_exemptions_paginated(limit=per_page, offset=offset)
+    
+    if not exemptions:
+        return "豁免名单中没有用户。", None
+
+    keyboard = []
+    message = f"豁免名单 (第 {page}/{total_pages} 页)\n\n"
+    
+    for idx, exemption in enumerate(exemptions, 1):
+        user_id = exemption.get('user_id')
+        first_name = exemption.get('first_name') or 'N/A'
+        username = exemption.get('username')
+        is_permanent = bool(exemption.get('is_permanent', 0))
+        expires_at = exemption.get('expires_at')
+        reason = exemption.get('reason') or '无'
+        
+        safe_first_name = _safe_text_for_markdown(first_name)
+        safe_username = _safe_text_for_markdown(username) if username else None
+        safe_reason = _safe_text_for_markdown(reason)
+        
+        user_info = f"{safe_first_name}"
+        if safe_username:
+            user_info += f" (@{safe_username})"
+        
+        exemption_type = "永久豁免" if is_permanent else "临时豁免"
+        expires_info = ""
+        if not is_permanent and expires_at:
+            try:
+                expires_datetime = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                if expires_datetime.tzinfo is None:
+                    expires_datetime = expires_datetime.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                if expires_datetime > now:
+                    expires_info = f"\n到期时间: {expires_at}"
+                else:
+                    expires_info = "\n已过期"
+            except Exception:
+                expires_info = f"\n到期时间: {expires_at}"
+        
+        message += (
+            f"{idx}. {user_info} (`{user_id}`)\n"
+            f"   类型: {exemption_type}\n"
+            f"   原因: {safe_reason}{expires_info}\n\n"
+        )
+        
+        keyboard.append([
+            InlineKeyboardButton(f"移除豁免 {first_name}", callback_data=f"admin_remove_exemption_{user_id}")
+        ])
+    
+    navigation_buttons = []
+    if page > 1:
+        navigation_buttons.append(InlineKeyboardButton("上一页", callback_data=f"panel_exemptions_page_{page - 1}"))
+    if page < total_pages:
+        navigation_buttons.append(InlineKeyboardButton("下一页", callback_data=f"panel_exemptions_page_{page + 1}"))
+    
+    if navigation_buttons:
+        keyboard.append(navigation_buttons)
+
+    return message, InlineKeyboardMarkup(keyboard)

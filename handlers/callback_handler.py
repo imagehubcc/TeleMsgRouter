@@ -133,6 +133,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         total_users = await db.get_total_users_count()
         blocked_users = await db.get_blocked_users_count()
+        exempted_users = await db.get_exemptions_count()
         is_enabled = await db.get_autoreply_enabled()
         
         message = (
@@ -140,6 +141,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"统计信息:\n\n"
             f"总用户数: {total_users}\n"
             f"黑名单用户数: {blocked_users}\n"
+            f"豁免用户数: {exempted_users}\n"
             f"自动回复状态: {'已启用' if is_enabled else '已禁用'}\n\n"
             f"请选择要查看的功能："
         )
@@ -147,7 +149,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("黑名单管理", callback_data="panel_blacklist_page_1"), InlineKeyboardButton("所有用户信息", callback_data="panel_stats")],
             [InlineKeyboardButton("被过滤消息", callback_data="panel_filtered_page_1"), InlineKeyboardButton("自动回复管理", callback_data="panel_autoreply")],
-            [InlineKeyboardButton("网络测试管理", callback_data="panel_network_test")],
+            [InlineKeyboardButton("豁免名单管理", callback_data="panel_exemptions_page_1"), InlineKeyboardButton("网络测试管理", callback_data="panel_network_test")],
         ]
         
         await query.edit_message_text(
@@ -1035,6 +1037,81 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(response, reply_markup=keyboard)
         else:
             await query.edit_message_text(response)
+    
+    elif data.startswith("panel_exemptions_page_"):
+        from services import blacklist
+        
+        if not await db.is_admin(user_id):
+            await query.answer("抱歉，您没有权限执行此操作。", show_alert=True)
+            return
+        
+        try:
+            page = int(data.split("_")[3])
+        except (ValueError, IndexError):
+            await query.answer("无效的页码。", show_alert=True)
+            return
+        
+        message, keyboard = await blacklist.get_exemptions_keyboard(page=page)
+        
+        if keyboard:
+            keyboard_buttons = [list(row) for row in keyboard.inline_keyboard]
+            keyboard_buttons.append([InlineKeyboardButton("返回主面板", callback_data="panel_back")])
+            keyboard = InlineKeyboardMarkup(keyboard_buttons)
+        else:
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("返回主面板", callback_data="panel_back")]])
+        
+        if keyboard:
+            await query.edit_message_text(
+                text=message,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+        else:
+            await query.edit_message_text(text=message)
+    
+    elif data.startswith("admin_remove_exemption_"):
+        from services import blacklist
+        
+        if not await db.is_admin(user_id):
+            await query.answer("抱歉，您没有权限执行此操作。", show_alert=True)
+            return
+        
+        try:
+            user_id_to_remove = int(data.split("_")[3])
+        except (ValueError, IndexError):
+            await query.answer("无效的用户ID。", show_alert=True)
+            return
+        
+        await db.remove_exemption(user_id_to_remove)
+        await query.answer(f"已移除用户 {user_id_to_remove} 的豁免", show_alert=True)
+        
+        current_page = 1
+        message_text = query.message.text or ""
+        if "第" in message_text and "/" in message_text:
+            try:
+                match = re.search(r'第\s*(\d+)/', message_text)
+                if match:
+                    current_page = int(match.group(1))
+            except:
+                pass
+        
+        message, keyboard = await blacklist.get_exemptions_keyboard(page=current_page)
+        
+        if keyboard:
+            keyboard_buttons = [list(row) for row in keyboard.inline_keyboard]
+            keyboard_buttons.append([InlineKeyboardButton("返回主面板", callback_data="panel_back")])
+            keyboard = InlineKeyboardMarkup(keyboard_buttons)
+        else:
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("返回主面板", callback_data="panel_back")]])
+        
+        if keyboard:
+            await query.edit_message_text(
+                text=message,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+        else:
+            await query.edit_message_text(text=message)
     
     elif data.startswith("stats_list_all_users_page_"):
         from services.blacklist import get_all_users_keyboard

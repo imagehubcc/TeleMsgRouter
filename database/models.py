@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from .db_manager import db_manager
 from config import config
 
@@ -321,3 +321,97 @@ async def set_autoreply_enabled(enabled: bool):
             ('1' if enabled else '0', 'autoreply_enabled')
         )
         await db.commit()
+
+async def is_exempted(user_id: int) -> bool:
+    async with db_manager.get_connection() as db:
+        async with db.execute('''
+            SELECT is_permanent, expires_at 
+            FROM exemptions 
+            WHERE user_id = ?
+        ''', (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return False
+            
+            is_permanent = bool(row[0])
+            expires_at = row[1]
+            
+            if is_permanent:
+                return True
+            
+            if expires_at:
+                try:
+                    expires_datetime = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                    if expires_datetime.tzinfo is None:
+                        expires_datetime = expires_datetime.replace(tzinfo=timezone.utc)
+                    now = datetime.now(timezone.utc)
+                    return expires_datetime > now
+                except Exception as e:
+                    print(f"解析豁免过期时间失败: {e}")
+                    return False
+            
+            return False
+
+async def add_exemption(user_id: int, is_permanent: bool, exempted_by: int, reason: str = None, expires_at: str = None):
+    async with db_manager.get_connection() as db:
+        await db.execute('''
+            INSERT OR REPLACE INTO exemptions 
+            (user_id, is_permanent, expires_at, exempted_by, reason, created_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, 1 if is_permanent else 0, expires_at, exempted_by, reason))
+        await db.commit()
+
+async def remove_exemption(user_id: int):
+    async with db_manager.get_connection() as db:
+        await db.execute('DELETE FROM exemptions WHERE user_id = ?', (user_id,))
+        await db.commit()
+
+async def get_exemption(user_id: int):
+    async with db_manager.get_connection() as db:
+        async with db.execute('''
+            SELECT user_id, is_permanent, expires_at, exempted_by, reason, created_at
+            FROM exemptions
+            WHERE user_id = ?
+        ''', (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                cols = [description[0] for description in cursor.description]
+                return dict(zip(cols, row))
+            return None
+
+async def get_all_exemptions():
+    async with db_manager.get_connection() as db:
+        async with db.execute('''
+            SELECT e.user_id, u.first_name, u.username, e.is_permanent, e.expires_at, 
+                   e.exempted_by, e.reason, e.created_at
+            FROM exemptions e
+            LEFT JOIN users u ON e.user_id = u.user_id
+            ORDER BY e.created_at DESC
+        ''') as cursor:
+            rows = await cursor.fetchall()
+            if not rows:
+                return []
+            cols = [description[0] for description in cursor.description]
+            return [dict(zip(cols, row)) for row in rows]
+
+async def get_exemptions_paginated(limit: int = 5, offset: int = 0):
+    async with db_manager.get_connection() as db:
+        async with db.execute('''
+            SELECT e.user_id, u.first_name, u.username, e.is_permanent, e.expires_at, 
+                   e.exempted_by, e.reason, e.created_at
+            FROM exemptions e
+            LEFT JOIN users u ON e.user_id = u.user_id
+            ORDER BY e.created_at DESC
+            LIMIT ? OFFSET ?
+        ''', (limit, offset)) as cursor:
+            rows = await cursor.fetchall()
+            if not rows:
+                return []
+            cols = [description[0] for description in cursor.description]
+            return [dict(zip(cols, row)) for row in rows]
+
+async def get_exemptions_count() -> int:
+    async with db_manager.get_connection() as db:
+        async with db.execute('SELECT COUNT(*) FROM exemptions') as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0

@@ -30,6 +30,7 @@ class DatabaseManager:
             await self.create_statistics_table(db)
             await self.create_filtered_messages_table(db)
             await self.create_knowledge_base_table(db)
+            await self.create_exemptions_table(db)
             await self.migrate_database(db)
             await db.commit()
         logging.info("数据库初始化完成。")
@@ -193,6 +194,21 @@ class DatabaseManager:
             )
         ''')
         await db.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_base_title ON knowledge_base(title)')
+
+    async def create_exemptions_table(self, db):
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS exemptions (
+                user_id INTEGER PRIMARY KEY,
+                is_permanent INTEGER DEFAULT 0,
+                expires_at TIMESTAMP,
+                exempted_by INTEGER NOT NULL,
+                reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        ''')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_exemptions_expires ON exemptions(expires_at)')
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_exemptions_permanent ON exemptions(is_permanent)')
 
     async def get_filtered_messages_by_user(self, user_id, limit=5):
         async with self.get_connection() as db:

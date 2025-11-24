@@ -124,27 +124,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message.video or message.animation:
         pass
     else:
-        analyzing_message = await context.bot.send_message(
-            chat_id=message.chat_id,
-            text="正在通过AI分析内容是否包含垃圾信息...",
-            reply_to_message_id=message.message_id
-        )
-
-        analysis_result = await gemini_service.analyze_message(message, image_bytes)
-        if analysis_result.get("is_spam"):
-            await db.save_filtered_message(
-                user_id=user.id,
-                message_id=message.message_id,
-                content=message.text or message.caption,
-                reason=analysis_result.get("reason"),
-                media_type=message.photo and "photo" or message.sticker and "sticker",
-                media_file_id=message.photo and message.photo[-1].file_id or message.sticker and message.sticker.file_id,
+        is_exempted = await db.is_exempted(user.id)
+        
+        if not is_exempted:
+            analyzing_message = await context.bot.send_message(
+                chat_id=message.chat_id,
+                text="正在通过AI分析内容是否包含垃圾信息...",
+                reply_to_message_id=message.message_id
             )
-            reason = analysis_result.get("reason", "未提供原因")
-            await analyzing_message.edit_text(f"您的消息已被系统拦截，因此未被转发\n\n原因：{reason}")
-            return
-        else:
-            await analyzing_message.delete()
+
+            analysis_result = await gemini_service.analyze_message(message, image_bytes)
+            if analysis_result.get("is_spam"):
+                await db.save_filtered_message(
+                    user_id=user.id,
+                    message_id=message.message_id,
+                    content=message.text or message.caption,
+                    reason=analysis_result.get("reason"),
+                    media_type=message.photo and "photo" or message.sticker and "sticker",
+                    media_file_id=message.photo and message.photo[-1].file_id or message.sticker and message.sticker.file_id,
+                )
+                reason = analysis_result.get("reason", "未提供原因")
+                await analyzing_message.edit_text(f"您的消息已被系统拦截，因此未被转发\n\n原因：{reason}")
+                return
+            else:
+                await analyzing_message.delete()
 
     thread_id, is_new = await get_or_create_thread(update, context)
     if not thread_id:
