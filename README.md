@@ -248,21 +248,15 @@ python bot.py
 - `/start` - 启动机器人，显示欢迎信息。
 - `/getid` - 显示当前用户/群组ID。
 - `/help` - 显示帮助信息。
-- `/ping` - 执行 Ping 网络测试（需要授权）。
-- `/nexttrace` - 执行路由追踪测试（需要授权）。
 
 #### 管理员命令
+- `/panel` - 打开管理面板
 - `/block` - 对应话题直接发送永久拉黑用户。
 - `/blacklist` - 查看当前的黑名单列表。
 - `/stats` - 查看机器人运行统计信息。
-- `/view_filtered` - 查看被拦截信息及发送者。
-- `/exempt` - 豁免用户内容审查（临时或永久）。
-- `/autoreply` - 管理自动回复功能（开启/关闭、管理知识库）。
-- `/adduser <user_id>` - 添加网络测试授权用户。
-- `/rmuser <user_id>` - 删除网络测试授权用户。
-- `/addserver` - 添加网络测试服务器（交互式）。
-- `/rmserver` - 删除网络测试服务器。
-- `/install_nexttrace` - 在服务器上安装 NextTrace 工具。
+
+> [!TIP]\
+> 更多命令请查看相应功能介绍中的详细说明
 
 ---
 
